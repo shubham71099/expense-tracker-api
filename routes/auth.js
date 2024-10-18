@@ -2,6 +2,9 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/user");
+const LoggedUser = require("../models/LoggedUser");
+const populateUserId = require("../middlewares/auth");
+
 const router = express.Router();
 
 router.post("/register", async (req, res) => {
@@ -40,13 +43,41 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Incorrect email or password." });
     }
 
+    const loggedInCount = await LoggedUser.countDocuments({ userId: user._id });
+    if (loggedInCount >= 2) {
+      return res.status(400).json({ 
+        message: "Already Logged in on 2 devices. Please log out from one." 
+      });
+    }
+
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: "365d",
     });
+
+    const newLoggedUser = new LoggedUser({ userId: user._id });
+    await newLoggedUser.save();
+
     res.json({ token });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
+
+router.post("/logout",populateUserId, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const result = await LoggedUser.findOneAndDelete({ userId });
+
+    if (!result) {
+      return res.status(400).json({ message: "No logged in sessions found for this user." });
+    }
+
+    return res.json({ message: "Logged out successfully." });
+  } catch (error) {
+    return res.status(500).json({ message: error.message });
+  }
+});
+
 
 module.exports = router;
